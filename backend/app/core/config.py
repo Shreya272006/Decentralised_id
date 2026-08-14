@@ -17,8 +17,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api"
 
-    # --- Database ---
-    DATABASE_URL: str = "postgresql+psycopg2://did_user:did_pass@localhost:5432/did_platform"
+    DATABASE_URL: str = "mongodb://localhost:27017/did_platform"
 
     # --- Redis (rate limiting / OTP / session cache) ---
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -2,11 +2,7 @@ import uuid
 from datetime import datetime
 import enum
 
-from sqlalchemy import String, DateTime, ForeignKey, Float, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
+from app.db.base import Base, String, Boolean, DateTime, ForeignKey, SAEnum, UUID, JSONB, Mapped, mapped_column, relationship, Float, INET
 
 
 class DocumentStatus(str, enum.Enum):
