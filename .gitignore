@@ -1,0 +1,26 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Hardhat
+contracts/artifacts/
+contracts/cache/
+contracts/deployments/
+backend/contracts_abi/
+
+# Uploads
+/tmp/did_uploads/
+
+# OS
+.DS_Store
