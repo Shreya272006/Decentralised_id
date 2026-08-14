@@ -54,12 +54,10 @@ class ModelMetaclass(type):
     def __new__(cls, name, bases, attrs):
         annotations = attrs.get("__annotations__", {})
         for field_name in annotations:
-            if field_name not in attrs:
-                attrs[field_name] = FieldShim(field_name)
+            attrs[field_name] = FieldShim(field_name)
         for base in bases:
             for field_name in getattr(base, "__annotations__", {}):
-                if field_name not in attrs:
-                    attrs[field_name] = FieldShim(field_name)
+                attrs[field_name] = FieldShim(field_name)
         new_class = super().__new__(cls, name, bases, attrs)
         for attr_name in dir(new_class):
             try:
@@ -71,14 +69,65 @@ class ModelMetaclass(type):
         return new_class
 
 class Base(metaclass=ModelMetaclass):
+    def _init_defaults(self):
+        for field_name in getattr(self.__class__, "__annotations__", {}):
+            setattr(self, field_name, None)
+        # Specific defaults matching columns
+        if hasattr(self, "failed_login_attempts"):
+            self.failed_login_attempts = 0
+        if hasattr(self, "is_active"):
+            self.is_active = True
+        if hasattr(self, "is_verified"):
+            self.is_verified = False
+        if hasattr(self, "is_blocked"):
+            self.is_blocked = False
+        if hasattr(self, "mfa_enabled"):
+            self.mfa_enabled = False
+        if hasattr(self, "is_approved"):
+            self.is_approved = False
+        if hasattr(self, "confirmed"):
+            self.confirmed = False
+        if hasattr(self, "liveness_passed"):
+            self.liveness_passed = False
+        if hasattr(self, "match_passed"):
+            self.match_passed = False
+        if hasattr(self, "role"):
+            self.role = "user"
+            
+        # Enum/status fields
+        if hasattr(self, "status"):
+            classname = self.__class__.__name__
+            if classname == "Credential":
+                self.status = "active"
+            elif classname in ("ConsentRecord", "DocumentValidation"):
+                self.status = "pending"
+                
+        # String defaults
+        if hasattr(self, "schema_version"):
+            self.schema_version = "1.0"
+        if hasattr(self, "key_algorithm"):
+            self.key_algorithm = "Ed25519"
+            
+        # Dict defaults
+        for dict_field in ("did_document", "details", "ocr_extracted_fields", "tamper_indicators", "signals", "metadata_json"):
+            if hasattr(self, dict_field):
+                setattr(self, dict_field, {})
+                
+        # Datetime defaults
+        now = datetime.utcnow()
+        for dt_field in ("created_at", "updated_at", "issued_at", "requested_at"):
+            if hasattr(self, dt_field):
+                setattr(self, dt_field, now)
+
     def __init__(self, **kwargs):
+        self._init_defaults()
         for k, v in kwargs.items():
             setattr(self, k, v)
         if not hasattr(self, "id") or self.id is None:
             self.id = uuid.uuid4()
-        if not hasattr(self, "created_at"):
+        if not hasattr(self, "created_at") or self.created_at is None:
             self.created_at = datetime.utcnow()
-        if not hasattr(self, "updated_at"):
+        if not hasattr(self, "updated_at") or self.updated_at is None:
             self.updated_at = datetime.utcnow()
 
     def to_dict(self):
@@ -103,6 +152,7 @@ class Base(metaclass=ModelMetaclass):
         if not d:
             return None
         obj = cls.__new__(cls)
+        obj._init_defaults()
         for k, v in d.items():
             if k == "_id":
                 k = "id"
@@ -111,10 +161,25 @@ class Base(metaclass=ModelMetaclass):
                     v = uuid.UUID(v)
                 except ValueError:
                     pass
-            elif k in ("created_at", "updated_at", "locked_until", "verified_at", "expires_at", "uploaded_at", "matched_at", "timestamp") and isinstance(v, str):
+            elif k in ("created_at", "updated_at", "locked_until", "verified_at", "expires_at", "uploaded_at", "matched_at", "timestamp", "issued_at", "requested_at") and isinstance(v, str):
                 try:
                     v = datetime.fromisoformat(v)
                 except ValueError:
                     pass
-            setattr(obj, k, v)
+            
+            # Map None values to defaults (only override if database has a non-null value)
+            if v is not None:
+                setattr(obj, k, v)
         return obj
+
+    def __getattr__(self, name):
+        if name == "failed_login_attempts":
+            return 0
+        if name in ("is_active", "is_verified"):
+            return True
+        if name in ("is_blocked", "mfa_enabled", "liveness_passed", "match_passed", "is_approved", "confirmed"):
+            return False
+        if name in ("locked_until", "verified_at", "expires_at", "uploaded_at", "matched_at", "timestamp", "mfa_secret_encrypted", "full_name_encrypted", "organization_domain", "onchain_issuer_id", "blockchain_tx_hash", "onchain_credential_hash", "revoked_at", "revocation_reason"):
+            return None
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
