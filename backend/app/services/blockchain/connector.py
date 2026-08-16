@@ -17,7 +17,6 @@ from pathlib import Path
 
 from eth_account import Account
 from web3 import Web3
-
 try:
     from web3.middleware import geth_poa_middleware
 except ImportError:

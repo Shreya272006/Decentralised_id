@@ -9,6 +9,8 @@ from slowapi.util import get_remote_address
 from app.core.config import settings
 
 
+import redis
+
 def _client_key(request) -> str:
     """
     Rate-limit by authenticated user id when available (from a prior
@@ -21,9 +23,18 @@ def _client_key(request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
+storage_uri = settings.REDIS_URL
+try:
+    # Check if Redis is running, fallback to memory if not
+    r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
+    r.ping()
+except Exception:
+    # NOTE: memory:// fallback is per-process and won't share limits across multiple workers — single-worker only for now.
+    storage_uri = "memory://"
+
 limiter = Limiter(
     key_func=_client_key,
-    storage_uri=settings.REDIS_URL,
+    storage_uri=storage_uri,
     default_limits=[settings.RATE_LIMIT_DEFAULT],
-    headers_enabled=True,
+    headers_enabled=False,
 )

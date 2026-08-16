@@ -1,11 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
+from app.db.base import Base, String, Boolean, DateTime, ForeignKey, SAEnum, UUID, JSONB, Mapped, mapped_column, relationship, Text, INET
 
 
 class AuditEvent(Base):

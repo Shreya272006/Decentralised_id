@@ -24,3 +24,8 @@ backend/contracts_abi/
 
 # OS
 .DS_Store
+
+# Local Database & Secrets
+db_data/
+keys/
+

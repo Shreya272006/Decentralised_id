@@ -1,0 +1,52 @@
+# DecentraID Project Digest
+
+DecentraID is a decentralized identity and authentication verification system. This project has been updated to run fully on **MongoDB** instead of PostgreSQL and supports offline/local development without needing Redis.
+
+---
+
+## 🏗️ Architecture & Component Stack
+
+1. **Frontend**: Next.js App Router, Tailwind CSS dashboards.
+2. **Backend**: FastAPI, PyMongo (using a SQLAlchemy translation shim), and slowapi (rate-limiting).
+3. **Smart Contracts**: Solidity registry contracts running on a local Hardhat node.
+4. **Database**: MongoDB (replacing PostgreSQL for local compatibility).
+
+---
+
+## 🔌 Emulation Shim (SQL-to-MongoDB)
+
+To allow the app to run on MongoDB without changing any SQLAlchemy API routes or models, we built a custom database emulation layer:
+- **`app/db/base.py`**: Intercepts model mappings, overrides python operators (`==`, `>`, `!=`, etc.) using `FieldShim` to generate MongoDB queries, and automatically handles JSON/UUID serialization.
+- **`app/db/session.py`**: Intercepts session commands (`SessionLocal`, `db.query()`, `.filter()`, `.order_by()`, `.commit()`, `.refresh()`) and executes them directly against MongoDB.
+
+---
+
+## ⚡ Rate-Limiting & Redis Fallback
+
+The backend uses `slowapi` for rate-limiting. In local development:
+- The backend checks for a running Redis server at startup.
+- If Redis is down, it automatically falls back to an **in-memory storage engine (`memory://`)** to prevent server crashes.
+- Rate limiter response headers are disabled to prevent serialization conflicts with Pydantic routes.
+
+---
+
+## 🚀 Setup & Execution
+
+### 1. Prerequisites
+- **MongoDB** running on `mongodb://localhost:27017`
+- **Node.js** & **Python 3.11** installed
+
+### 2. Seeding & Running
+```bash
+# Backend Setup
+cd backend
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m scripts.seed_db
+uvicorn app.main:app --reload
+
+# Frontend Setup
+cd ../frontend
+npm install
+npm run dev
+```

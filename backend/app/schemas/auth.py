@@ -52,6 +52,9 @@ class LoginResponse(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     token_type: str = "bearer"
+    user_id: uuid.UUID | None = None
+    email: EmailStr | None = None
+    role: Role | None = None
 
 
 class VerifyOtpRequest(BaseModel):
@@ -60,15 +63,18 @@ class VerifyOtpRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
+    access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
     expires_in: int
+    user_id: uuid.UUID | None = None
+    email: EmailStr | None = None
+    role: Role | None = None
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None

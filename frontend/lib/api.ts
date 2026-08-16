@@ -17,20 +17,24 @@ export function clearStoredTokens() {
   window.sessionStorage.removeItem("refresh_token");
 }
 
-// Tokens are kept in sessionStorage (not localStorage) to limit exposure
-// window, and never persisted in a JS-readable cookie — this mitigates
-// (but does not eliminate) token theft via XSS; a production deployment
-// should move to httpOnly, Secure, SameSite=Strict cookies issued by the
-// backend and drop client-readable token storage entirely.
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(";").shift() || null;
+  return null;
+}
+
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: 20000,
+  withCredentials: true,
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = getStoredToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const csrfToken = getCookie("csrf_token");
+  if (csrfToken) {
+    config.headers["X-CSRF-Token"] = csrfToken;
   }
   return config;
 });

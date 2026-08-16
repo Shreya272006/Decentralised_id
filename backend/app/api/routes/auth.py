@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -110,7 +110,7 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
 
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, response: Response, payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
 
     generic_error = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
@@ -161,12 +161,44 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
         resource_id=str(user.id), ip_address=_client_ip(request),
     )
     db.commit()
-    return LoginResponse(otp_required=False, access_token=access_token, refresh_token=refresh_token)
+
+    csrf_token = secrets.token_hex(32)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        httponly=False,  # Accessible by frontend JS
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    return LoginResponse(
+        otp_required=False,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+    )
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
-def verify_otp(request: Request, payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+def verify_otp(request: Request, response: Response, payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     challenge = _otp_challenges.get(payload.otp_challenge_token)
     if not challenge or challenge["expires_at"] < datetime.now(timezone.utc):
         _otp_challenges.pop(payload.otp_challenge_token, None)
@@ -193,18 +225,48 @@ def verify_otp(request: Request, payload: VerifyOtpRequest, db: Session = Depend
     )
     db.commit()
 
+    csrf_token = secrets.token_hex(32)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        httponly=False,
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
     return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
     )
 
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
-def refresh(request: Request, payload: RefreshRequest, db: Session = Depends(get_db)):
+def refresh(request: Request, response: Response, payload: RefreshRequest, db: Session = Depends(get_db)):
+    ref_token = payload.refresh_token or request.cookies.get("refresh_token")
+    if not ref_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token.")
     try:
-        claims = decode_token(payload.refresh_token)
+        claims = decode_token(ref_token)
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token.")
 
@@ -218,21 +280,44 @@ def refresh(request: Request, payload: RefreshRequest, db: Session = Depends(get
     access_token = create_access_token(subject=str(user.id), role=user.role)
     new_refresh_token = create_refresh_token(subject=str(user.id))
 
+    csrf_token = secrets.token_hex(32)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+    )
+    response.set_cookie(
+        key="csrf_token",
+        value=csrf_token,
+        httponly=False,
+        secure=True,
+        samesite="strict",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
     return TokenResponse(
-        access_token=access_token,
-        refresh_token=new_refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
     )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(payload: LogoutRequest, db: Session = Depends(get_db)):
-    # With short-lived stateless JWTs, logout is enforced client-side by
-    # discarding tokens; a production system should additionally maintain
-    # a server-side revocation list keyed by `jti` for the refresh token
-    # (e.g. in Redis) so a leaked refresh token can be invalidated early.
-    try:
-        decode_token(payload.refresh_token)
-    except Exception:
-        pass
+def logout(request: Request, response: Response, payload: LogoutRequest = None, db: Session = Depends(get_db)):
+    # Clear cookies
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    response.delete_cookie("csrf_token")
     return None
