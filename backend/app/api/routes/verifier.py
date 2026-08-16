@@ -111,12 +111,30 @@ def verify_submitted_proof(
             if credential is None or credential.status != CredentialStatus.ACTIVE:
                 result = "revoked" if credential and credential.status == CredentialStatus.REVOKED else "invalid"
             else:
-                is_valid = verify_proof(
-                    public_inputs=proof_record.public_inputs, proof_blob=proof_record.proof_blob
-                )
-                proof_record.is_valid = is_valid
-                proof_record.verified_at = datetime.utcnow()
-                result = "valid" if is_valid and proof_record.public_inputs.get("witness_satisfied") else "invalid"
+                # Validate the issuer signature of the credential and current issuer key status
+                from app.core.keystore import get_issuer_verification_key, is_issuer_key_active
+                if not is_issuer_key_active(credential.issuer_id, db):
+                    sig_valid = False
+                else:
+                    try:
+                        pub_key = get_issuer_verification_key(credential.issuer_id)
+                        pub_key.verify(
+                            bytes.fromhex(credential.issuer_signature),
+                            bytes.fromhex(credential.claims_commitment)
+                        )
+                        sig_valid = True
+                    except Exception:
+                        sig_valid = False
+                
+                if not sig_valid:
+                    result = "invalid"
+                else:
+                    is_valid = verify_proof(
+                        public_inputs=proof_record.public_inputs, proof_blob=proof_record.proof_blob
+                    )
+                    proof_record.is_valid = is_valid
+                    proof_record.verified_at = datetime.utcnow()
+                    result = "valid" if is_valid and proof_record.public_inputs.get("witness_satisfied") else "invalid"
 
     verification_log = VerificationLog(
         id=uuid.uuid4(),

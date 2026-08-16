@@ -37,19 +37,16 @@ def _get_active_issuer_profile(db: Session, user_id: str) -> IssuerProfile:
     return profile
 
 
-def _sign_commitment(commitment_hex: str, signing_key_id: str) -> str:
+def _sign_commitment(commitment_hex: str, issuer_id: str) -> str:
     """
-    Placeholder for the issuer's asymmetric signature over the claims
-    commitment (production: Ed25519/ECDSA private key held in a KMS/HSM,
-    signing sha256(commitment || credential metadata)). Represented here
-    as an HMAC keyed by a per-issuer secret derived from the platform
-    field-encryption key so the signature is still verifiable and
-    tamper-evident within this reference implementation.
+    Signs the commitment using the issuer's Ed25519 private key.
+    Returns the signature as a hex string.
     """
-    from app.core.security import hmac_sha256
-
-    key = hashlib.sha256(f"{signing_key_id}{settings.JWT_SECRET_KEY}".encode()).digest()
-    return hmac_sha256(key, bytes.fromhex(commitment_hex))
+    from app.core.keystore import get_issuer_signing_key
+    private_key = get_issuer_signing_key(issuer_id)
+    commitment_bytes = bytes.fromhex(commitment_hex)
+    signature_bytes = private_key.sign(commitment_bytes)
+    return signature_bytes.hex()
 
 
 @router.post("/credentials", response_model=IssueCredentialResponse, status_code=status.HTTP_201_CREATED)
@@ -83,7 +80,7 @@ def issue_credential(
 
     overall_commitment = hashlib.sha256("|".join(claim_commitments).encode()).hexdigest()
     signing_key_id = f"issuer:{issuer_profile.id}"
-    signature = _sign_commitment(overall_commitment, signing_key_id)
+    signature = _sign_commitment(overall_commitment, principal.user_id)
 
     # Encrypt the full raw claims payload as an audit-recoverable backup
     # (e.g. for issuer-initiated disputes); individual per-claim values

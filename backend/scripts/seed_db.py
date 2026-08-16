@@ -62,7 +62,9 @@ def issue_demo_credential(db, holder, issuer, credential_type, claims, days_vali
         claim_rows.append((key, value, salt, commitment))
 
     overall_commitment = hashlib.sha256("|".join(claim_commitments).encode()).hexdigest()
-    signature = hashlib.sha256(f"{signing_key_id}{overall_commitment}".encode()).hexdigest()
+    from app.core.keystore import get_issuer_signing_key
+    private_key = get_issuer_signing_key(str(issuer.id))
+    signature = private_key.sign(bytes.fromhex(overall_commitment)).hex()
 
     credential = Credential(
         id=uuid.uuid4(), holder_id=holder.id, issuer_id=issuer.id, credential_type=credential_type,
