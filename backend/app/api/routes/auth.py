@@ -168,7 +168,7 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
         value=access_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     response.set_cookie(
@@ -176,7 +176,7 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
         value=refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
     )
     response.set_cookie(
@@ -184,7 +184,7 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
         value=csrf_token,
         httponly=False,  # Accessible by frontend JS
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
@@ -231,7 +231,7 @@ def verify_otp(request: Request, response: Response, payload: VerifyOtpRequest, 
         value=access_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     response.set_cookie(
@@ -239,7 +239,7 @@ def verify_otp(request: Request, response: Response, payload: VerifyOtpRequest, 
         value=refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
     )
     response.set_cookie(
@@ -247,7 +247,7 @@ def verify_otp(request: Request, response: Response, payload: VerifyOtpRequest, 
         value=csrf_token,
         httponly=False,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
@@ -286,7 +286,7 @@ def refresh(request: Request, response: Response, payload: RefreshRequest, db: S
         value=access_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     response.set_cookie(
@@ -294,7 +294,7 @@ def refresh(request: Request, response: Response, payload: RefreshRequest, db: S
         value=new_refresh_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
     )
     response.set_cookie(
@@ -302,7 +302,7 @@ def refresh(request: Request, response: Response, payload: RefreshRequest, db: S
         value=csrf_token,
         httponly=False,
         secure=settings.ENVIRONMENT == "production",
-        samesite="strict",
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
