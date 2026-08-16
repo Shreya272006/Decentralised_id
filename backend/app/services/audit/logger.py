@@ -31,7 +31,18 @@ def log_event(
     device_fingerprint: Optional[str] = None,
     details: Optional[dict] = None,
 ) -> AuditEvent:
-    last = db.query(AuditEvent).order_by(AuditEvent.created_at.desc()).first()
+    # Query the latest events to find the true end of the chain (leaf node)
+    latest_events = db.query(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(20).all()
+    last = None
+    if latest_events:
+        referenced = {e.previous_record_hash for e in latest_events}
+        for e in latest_events:
+            if e.record_hash not in referenced:
+                last = e
+                break
+        if not last:
+            last = latest_events[0]
+
     previous_hash = last.record_hash if last else "GENESIS"
     timestamp = datetime.utcnow()
 
@@ -71,9 +82,45 @@ def verify_chain(db: Session) -> tuple[bool, Optional[str]]:
     record's stored hash matches a recomputed hash from its fields and
     the previous record's hash. Returns (is_intact, first_broken_id).
     """
-    events = db.query(AuditEvent).order_by(AuditEvent.created_at.asc()).all()
+    events = db.query(AuditEvent).all()
+    if not events:
+        return True, None
+
+    # Detect forks: check if any previous_record_hash is shared by multiple events
+    prev_hashes = [e.previous_record_hash for e in events if e.previous_record_hash]
+    seen_prevs = set()
+    for ph in prev_hashes:
+        if ph in seen_prevs:
+            duplicates = [str(e.id) for e in events if e.previous_record_hash == ph]
+            return False, f"fork detected: multiple events {duplicates} point to the same previous_record_hash '{ph}'"
+        seen_prevs.add(ph)
+
+    # Map previous_record_hash -> event
+    lookup = {e.previous_record_hash: e for e in events if e.previous_record_hash}
+
+    # Reconstruct order by traversing the linked list pointers
+    ordered_events = []
+    current_prev = "GENESIS"
+    visited = set()
+
+    while current_prev in lookup:
+        if current_prev in visited:
+            break  # Prevent cycle infinite loop
+        visited.add(current_prev)
+        event = lookup[current_prev]
+        ordered_events.append(event)
+        current_prev = event.record_hash
+
+    # If the reconstructed chain does not contain all events, some are orphan/disconnected/tampered
+    if len(ordered_events) != len(events):
+        ordered_ids = {e.id for e in ordered_events}
+        broken_events = [e for e in events if e.id not in ordered_ids]
+        if broken_events:
+            return False, f"orphan detected: events {[str(e.id) for e in broken_events]} are not reachable from GENESIS"
+        return False, "tamper detected: chain length mismatch"
+
     previous_hash = "GENESIS"
-    for event in events:
+    for event in ordered_events:
         fields = {
             "actor_id": str(event.actor_id) if event.actor_id else None,
             "action": event.action,

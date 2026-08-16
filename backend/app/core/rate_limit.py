@@ -29,6 +29,7 @@ try:
     r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
     r.ping()
 except Exception:
+    # NOTE: memory:// fallback is per-process and won't share limits across multiple workers — single-worker only for now.
     storage_uri = "memory://"
 
 limiter = Limiter(
