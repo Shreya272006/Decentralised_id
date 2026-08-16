@@ -45,13 +45,13 @@ def test_e2e_and_idor_flow():
         "password": "AlicePass!2024"
     })
     assert login_resp.status_code == 200
-    alice_token = login_resp.json()["access_token"]
-    alice_headers = {"Authorization": f"Bearer {alice_token}"}
+    alice_cookies = dict(login_resp.cookies)
     print("Alice login response:", login_resp.json())
 
     # Generate ZK proof for age_gte_18
     print("[Step 1.1] Generating ZK proof for Alice (age_gte_18)...")
-    proof_resp = client.post("/api/wallet/generate-proof", headers=alice_headers, json={
+    csrf_headers_alice = {"X-CSRF-Token": alice_cookies.get("csrf_token") or ""}
+    proof_resp = client.post("/api/wallet/generate-proof", headers=csrf_headers_alice, cookies=alice_cookies, json={
         "credential_id": str(alice_cred.id),
         "claim_predicate": "age_gte_18"
     })
@@ -76,13 +76,13 @@ def test_e2e_and_idor_flow():
         "password": "VerifierPass!2024"
     })
     assert login_resp.status_code == 200
-    verifier_token = login_resp.json()["access_token"]
-    verifier_headers = {"Authorization": f"Bearer {verifier_token}"}
+    verifier_cookies = dict(login_resp.cookies)
     print("Verifier login response:", login_resp.json())
 
     # Send proof request to Alice for scope age_gte_18
     print("[Step 2.1] Creating proof request for Alice...")
-    request_resp = client.post("/api/verifier/proof-request", headers=verifier_headers, json={
+    csrf_headers_verifier = {"X-CSRF-Token": verifier_cookies.get("csrf_token") or ""}
+    request_resp = client.post("/api/verifier/proof-request", headers=csrf_headers_verifier, cookies=verifier_cookies, json={
         "subject_email": "alice@example.com",
         "requested_scopes": ["age_gte_18"],
         "purpose": "Age verification for venue entry",
@@ -96,7 +96,7 @@ def test_e2e_and_idor_flow():
     # 3. Login as Alice & approve consent
     # -------------------------------------------------------------
     print("\n[Step 3] Alice approving pending consent request...")
-    respond_resp = client.post("/api/consent/respond", headers=alice_headers, json={
+    respond_resp = client.post("/api/consent/respond", headers=csrf_headers_alice, cookies=alice_cookies, json={
         "consent_id": consent_id,
         "approve": True
     })
@@ -108,7 +108,7 @@ def test_e2e_and_idor_flow():
     # 4. Login as Verifier & submit consent_id + proof_id
     # -------------------------------------------------------------
     print("\n[Step 4] Verifying Alice's submitted proof...")
-    verify_resp = client.post("/api/verifier/verify-proof", headers=verifier_headers, json={
+    verify_resp = client.post("/api/verifier/verify-proof", headers=csrf_headers_verifier, cookies=verifier_cookies, json={
         "consent_id": consent_id,
         "zk_proof_id": alice_proof_id
     })
@@ -125,10 +125,9 @@ def test_e2e_and_idor_flow():
         "password": "AdminPass!2024"
     })
     assert login_resp.status_code == 200
-    admin_token = login_resp.json()["access_token"]
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_cookies = dict(login_resp.cookies)
     
-    integrity_resp = client.get("/api/admin/logs/integrity", headers=admin_headers)
+    integrity_resp = client.get("/api/admin/logs/integrity", cookies=admin_cookies)
     print("Admin integrity check response:", integrity_resp.json())
     assert integrity_resp.status_code == 200
     assert integrity_resp.json() == {"intact": True, "first_broken_record_id": None}
@@ -142,12 +141,12 @@ def test_e2e_and_idor_flow():
         "password": "BobPass!2024"
     })
     assert login_resp.status_code == 200
-    bob_token = login_resp.json()["access_token"]
-    bob_headers = {"Authorization": f"Bearer {bob_token}"}
+    bob_cookies = dict(login_resp.cookies)
     
     # Try generating proof for age_gte_18
     print("Bob generating proof for age_gte_18...")
-    bob_proof_resp = client.post("/api/wallet/generate-proof", headers=bob_headers, json={
+    csrf_headers_bob = {"X-CSRF-Token": bob_cookies.get("csrf_token") or ""}
+    bob_proof_resp = client.post("/api/wallet/generate-proof", headers=csrf_headers_bob, cookies=bob_cookies, json={
         "credential_id": str(bob_cred.id),
         "claim_predicate": "age_gte_18"
     })
@@ -158,7 +157,7 @@ def test_e2e_and_idor_flow():
         # If it returns a proof, it must fail verification
         bob_proof_id = bob_proof_resp.json()["zk_proof_id"]
         # Create consent request for Bob
-        req_resp = client.post("/api/verifier/proof-request", headers=verifier_headers, json={
+        req_resp = client.post("/api/verifier/proof-request", headers=csrf_headers_verifier, cookies=verifier_cookies, json={
             "subject_email": "bob@example.com",
             "requested_scopes": ["age_gte_18"],
             "purpose": "Check Bob age",
@@ -166,12 +165,12 @@ def test_e2e_and_idor_flow():
         })
         bob_consent_id = req_resp.json()["consent_id"]
         # Approve
-        client.post("/api/consent/respond", headers=bob_headers, json={
+        client.post("/api/consent/respond", headers=csrf_headers_bob, cookies=bob_cookies, json={
             "consent_id": bob_consent_id,
             "approve": True
         })
         # Verify
-        v_resp = client.post("/api/verifier/verify-proof", headers=verifier_headers, json={
+        v_resp = client.post("/api/verifier/verify-proof", headers=csrf_headers_verifier, cookies=verifier_cookies, json={
             "consent_id": bob_consent_id,
             "zk_proof_id": bob_proof_id
         })
@@ -190,7 +189,7 @@ def test_e2e_and_idor_flow():
     # -------------------------------------------------------------
     print("\n[IDOR Tests] Testing cross-account access boundaries...")
     # Bob attempts to respond to Alice's consent request
-    bob_respond = client.post("/api/consent/respond", headers=bob_headers, json={
+    bob_respond = client.post("/api/consent/respond", headers=csrf_headers_bob, cookies=bob_cookies, json={
         "consent_id": consent_id,
         "approve": True
     })
@@ -199,18 +198,14 @@ def test_e2e_and_idor_flow():
     assert "access" in bob_respond.json()["detail"].lower()
     
     # Alice attempts to generate a proof using Bob's credential
-    alice_generate_bob_cred = client.post("/api/wallet/generate-proof", headers=alice_headers, json={
+    alice_generate_bob_cred = client.post("/api/wallet/generate-proof", headers=csrf_headers_alice, cookies=alice_cookies, json={
         "credential_id": str(bob_cred.id),
         "claim_predicate": "age_gte_18"
     })
     print("Alice generating proof for Bob's credential status:", alice_generate_bob_cred.status_code, alice_generate_bob_cred.json())
     assert alice_generate_bob_cred.status_code == 404
     
-    # Bob attempts to access Alice's consent history
-    # Wait, GET /api/consent/history does not take arguments, it returns the current user's consent history.
-    # Let's check routes in verifier.py and consent.py.
-    # Is there any other cross-account routes?
     # Alice attempts to access verifier endpoints (which require Role.VERIFIER)
-    alice_verifier_access = client.get("/api/verifier/history", headers=alice_headers)
+    alice_verifier_access = client.get("/api/verifier/history", cookies=alice_cookies)
     print("Alice calling verifier history status:", alice_verifier_access.status_code, alice_verifier_access.json())
     assert alice_verifier_access.status_code == 403

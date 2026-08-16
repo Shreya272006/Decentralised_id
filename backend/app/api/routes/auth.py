@@ -188,7 +188,12 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
-    return LoginResponse(otp_required=False)
+    return LoginResponse(
+        otp_required=False,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+    )
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
@@ -248,6 +253,9 @@ def verify_otp(request: Request, response: Response, payload: VerifyOtpRequest, 
 
     return TokenResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
     )
 
 
@@ -300,6 +308,9 @@ def refresh(request: Request, response: Response, payload: RefreshRequest, db: S
 
     return TokenResponse(
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
     )
 
 
