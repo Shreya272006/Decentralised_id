@@ -1,4 +1,6 @@
 import uuid
+import copy
+from datetime import datetime
 from pymongo import MongoClient
 from app.core.config import settings
 from app.db.base import FieldShim
@@ -8,8 +10,9 @@ db_name = settings.DATABASE_URL.split("/")[-1].split("?")[0] or "did_platform"
 mongodb = client[db_name]
 
 class QueryShim:
-    def __init__(self, model, db):
-        self.db = db
+    def __init__(self, model, session_shim):
+        self.session = session_shim
+        self.db = session_shim.db
         self.project_field = None
         self.is_count = False
         
@@ -24,7 +27,7 @@ class QueryShim:
             self.model = model
             
         tablename = getattr(self.model, "__tablename__", self.model.__name__.lower())
-        self.collection = db[tablename]
+        self.collection = self.db[tablename]
         self.filters = {}
         self.sort_field = None
         self.sort_dir = 1
@@ -37,6 +40,8 @@ class QueryShim:
                 name, val, op = crit
                 if isinstance(val, uuid.UUID):
                     val = str(val)
+                elif isinstance(val, datetime):
+                    val = val.isoformat()
                 # Map operations
                 if op == "eq":
                     self.filters[name] = val
@@ -82,6 +87,8 @@ class QueryShim:
         res = list(self.limit(1)._execute())
         if res:
             obj = self.model.from_dict(res[0])
+            if hasattr(self.session, "tracked"):
+                self.session.tracked[obj.id] = (obj, copy.deepcopy(obj.to_dict()))
             if self.project_field:
                 return (getattr(obj, self.project_field),)
             return obj
@@ -89,7 +96,12 @@ class QueryShim:
 
     def all(self):
         res = list(self._execute())
-        objs = [self.model.from_dict(doc) for doc in res]
+        objs = []
+        for doc in res:
+            obj = self.model.from_dict(doc)
+            if hasattr(self.session, "tracked"):
+                self.session.tracked[obj.id] = (obj, copy.deepcopy(obj.to_dict()))
+            objs.append(obj)
         if self.project_field:
             return [(getattr(obj, self.project_field),) for obj in objs]
         return objs
@@ -103,6 +115,8 @@ class QueryShim:
         res = list(self.limit(1)._execute())
         if res:
             obj = self.model.from_dict(res[0])
+            if hasattr(self.session, "tracked"):
+                self.session.tracked[obj.id] = (obj, copy.deepcopy(obj.to_dict()))
             if self.project_field:
                 return getattr(obj, self.project_field)
             return obj
@@ -113,20 +127,45 @@ class SessionShim:
     def __init__(self, db):
         self.db = db
         self.pending = []
+        self.tracked = {}
 
     def query(self, model, *args, **kwargs):
-        return QueryShim(model, self.db)
+        return QueryShim(model, self)
 
     def add(self, obj):
         self.pending.append(obj)
 
     def commit(self):
-        for obj in self.pending:
-            tablename = getattr(obj, "__tablename__", obj.__class__.__name__.lower())
-            collection = self.db[tablename]
-            doc = obj.to_dict()
-            collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
-        self.pending.clear()
+        # Automatically include all tracked objects that have been queried and modified,
+        # but deduplicate by ID so that manually added instances take precedence.
+        pending_ids = {str(getattr(obj, "id", None)) for obj in self.pending if getattr(obj, "id", None) is not None}
+        for obj, snapshot in self.tracked.values():
+            if obj.to_dict() != snapshot:
+                obj_id = str(obj.id)
+                if obj_id not in pending_ids:
+                    self.pending.append(obj)
+        if not self.pending:
+            return
+        try:
+            # Attempt to use a MongoDB transaction session if supported by topology
+            with self.db.client.start_session() as session:
+                with session.start_transaction():
+                    for obj in self.pending:
+                        tablename = getattr(obj, "__tablename__", obj.__class__.__name__.lower())
+                        collection = self.db[tablename]
+                        doc = obj.to_dict()
+                        collection.replace_one({"_id": doc["_id"]}, doc, upsert=True, session=session)
+            self.pending.clear()
+            self.tracked.clear()
+        except Exception:
+            # Fallback for standalone or if transaction fails
+            for obj in self.pending:
+                tablename = getattr(obj, "__tablename__", obj.__class__.__name__.lower())
+                collection = self.db[tablename]
+                doc = obj.to_dict()
+                collection.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+            self.pending.clear()
+            self.tracked.clear()
 
     def refresh(self, obj):
         tablename = getattr(obj, "__tablename__", obj.__class__.__name__.lower())
@@ -146,9 +185,11 @@ class SessionShim:
 
     def rollback(self):
         self.pending.clear()
+        self.tracked.clear()
 
     def close(self):
-        pass
+        self.pending.clear()
+        self.tracked.clear()
 
 
 SessionLocal = lambda: SessionShim(mongodb)
