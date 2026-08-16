@@ -17,7 +17,15 @@ from pathlib import Path
 
 from eth_account import Account
 from web3 import Web3
-from web3.middleware import ExtraDataToPOAMiddleware
+try:
+    from web3.middleware import geth_poa_middleware
+except ImportError:
+    # For web3.py 7.x compatibility
+    try:
+        from web3.middleware.proof_of_authority import ExtraDataToPOAMiddleware as geth_poa_middleware
+    except ImportError:
+        # Fallback: create a dummy middleware
+        geth_poa_middleware = None
 
 from app.core.config import settings
 
@@ -69,7 +77,8 @@ def _fallback_abi(name: str) -> list:
 class BlockchainConnector:
     def __init__(self):
         self.w3 = Web3(Web3.HTTPProvider(settings.WEB3_PROVIDER_URL))
-        self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+        if geth_poa_middleware:
+            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
         self.account = (
             Account.from_key(settings.DEPLOYER_PRIVATE_KEY) if settings.DEPLOYER_PRIVATE_KEY else None
         )

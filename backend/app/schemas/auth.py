@@ -6,12 +6,13 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.rbac import Role
 
-PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{10,}$")
+# Password must be at least 8 characters with at least one letter and one digit
+PASSWORD_RE = re.compile(r"^(?=.*[a-zA-Z])(?=.*\d).{8,}$")
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=10, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=200)
     role: Role = Role.USER
 
@@ -20,8 +21,7 @@ class RegisterRequest(BaseModel):
     def password_strength(cls, v: str) -> str:
         if not PASSWORD_RE.match(v):
             raise ValueError(
-                "Password must be at least 10 characters and include an uppercase letter, "
-                "a lowercase letter, a digit, and a special character."
+                "Password must be at least 8 characters and include at least one letter and one digit."
             )
         return v
 
