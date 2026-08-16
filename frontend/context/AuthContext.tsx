@@ -39,22 +39,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? window.sessionStorage.getItem("access_token") : null;
-    if (token) {
-      const claims = decodeJwt(token);
-      if (claims) {
-        setUser({ userId: claims.sub, email: claims.email || "", role: claims.role });
-      }
+    const infoStr = typeof window !== "undefined" ? window.sessionStorage.getItem("user_info") : null;
+    if (infoStr) {
+      setUser(JSON.parse(infoStr));
     }
     setLoading(false);
   }, []);
 
-  const applyTokens = useCallback((accessToken: string, refreshToken: string) => {
-    setStoredTokens(accessToken, refreshToken);
-    const claims = decodeJwt(accessToken);
-    if (claims) {
-      setUser({ userId: claims.sub, email: claims.email || "", role: claims.role });
-    }
+  const applyUser = useCallback((userInfo: AuthUser) => {
+    setUser(userInfo);
+    window.sessionStorage.setItem("user_info", JSON.stringify(userInfo));
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -62,24 +56,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.otp_required) {
       return { otpRequired: true, challengeToken: data.otp_challenge_token };
     }
-    applyTokens(data.access_token, data.refresh_token);
+    applyUser({ userId: data.user_id, email: data.email, role: data.role });
     return { otpRequired: false };
-  }, [applyTokens]);
+  }, [applyUser]);
 
   const verifyOtp = useCallback(async (challengeToken: string, code: string) => {
     const { data } = await apiClient.post("/auth/verify-otp", {
       otp_challenge_token: challengeToken,
       otp_code: code,
     });
-    applyTokens(data.access_token, data.refresh_token);
-  }, [applyTokens]);
+    applyUser({ userId: data.user_id, email: data.email, role: data.role });
+  }, [applyUser]);
 
   const register = useCallback(async (email: string, password: string, fullName: string, role: Role) => {
     await apiClient.post("/auth/register", { email, password, full_name: fullName, role });
   }, []);
 
-  const logout = useCallback(() => {
-    clearStoredTokens();
+  const logout = useCallback(async () => {
+    try {
+      await apiClient.post("/auth/logout");
+    } catch {}
+    window.sessionStorage.removeItem("user_info");
     setUser(null);
     router.push("/login");
   }, [router]);

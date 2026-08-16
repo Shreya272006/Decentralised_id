@@ -61,10 +61,10 @@ export default function LoginPage() {
   function redirectHome() {
     // Small delay to allow context state to settle before reading `user`.
     setTimeout(() => {
-      const token = window.sessionStorage.getItem("access_token");
-      if (!token) return;
-      const claims = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-      router.push(roleHome[claims.role] || "/dashboard/user");
+      const infoStr = window.sessionStorage.getItem("user_info");
+      if (!infoStr) return;
+      const userInfo = JSON.parse(infoStr);
+      router.push(roleHome[userInfo.role] || "/dashboard/user");
     }, 50);
   }
 
