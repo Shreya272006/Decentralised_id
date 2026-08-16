@@ -29,18 +29,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     """
-    Double-submit cookie CSRF defense: if a `csrf_token` cookie is present
-    (set only for cookie-session flows), state-changing requests must echo
-    the same value in an `X-CSRF-Token` header. Pure Bearer-token requests
-    (no session cookie present) are unaffected.
+    Double-submit cookie CSRF defense: if an `access_token` session cookie is present,
+    state-changing requests must include a matching `csrf_token` cookie and `X-CSRF-Token` header.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
         if request.method not in SAFE_METHODS:
-            cookie_token = request.cookies.get("csrf_token")
-            if cookie_token:
+            access_cookie = request.cookies.get("access_token")
+            if access_cookie:
+                cookie_token = request.cookies.get("csrf_token")
                 header_token = request.headers.get("x-csrf-token")
-                if not header_token or header_token != cookie_token:
+                if not cookie_token or not header_token or header_token != cookie_token:
                     from starlette.responses import JSONResponse
 
                     return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid."})
